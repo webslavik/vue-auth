@@ -1,7 +1,9 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
-import axios from './axios-auth';
-import globalAxios from './main';
+import axiosAuth from './axios-auth';
+import axios from 'axios';
+
+import router from './router'
 
 Vue.use(Vuex)
 
@@ -11,6 +13,14 @@ export default new Vuex.Store({
     userId: null,
     user: null,
   },
+
+  getters: {
+    user: (state) => state.user,
+    isAuth(state)  {
+      return state.idToken !== null;
+    }
+  },
+
   mutations: {
     authUser(state, userData) {
       state.idToken = userData.token;
@@ -18,11 +28,27 @@ export default new Vuex.Store({
     },
     storeUser(state, user) {
       state.user = user;
+    },
+    clearAuthData(state) {
+      state.idToken = null;
+      state.userId = null;
     }
   },
+
   actions: {
-    signin({ commit }, authData) {
-      axios.post('/verifyPassword?key=AIzaSyCIGm9ObhVE48izkeSQ-w26fd72A_iilzU', {
+    setLogoutTimer({ commit }, timer) {
+      setTimeout(() => {
+        commit('clearAuthData');
+      }, timer * 1000);
+    },
+
+    logout({ commit }) {
+      commit('clearAuthData');
+      router.replace('/signin');
+    },
+
+    signin({ commit, dispatch }, authData) {
+      axiosAuth.post('/verifyPassword?key=AIzaSyCIGm9ObhVE48izkeSQ-w26fd72A_iilzU', {
         email: authData.email,
         password: authData.password,
         returnSecureToken: true,
@@ -33,11 +59,13 @@ export default new Vuex.Store({
             token: res.data.idToken,
             userId: res.data.localId,
           });
+          dispatch('setLogoutTimer', res.data.expiresIn);
+          router.replace('/dashboard');
         })
         .catch(error => console.log(error))
     },
     signup({ commit, dispatch }, authData) {
-      axios.post('/signupNewUser?key=AIzaSyCIGm9ObhVE48izkeSQ-w26fd72A_iilzU', {
+      axiosAuth.post('/signupNewUser?key=AIzaSyCIGm9ObhVE48izkeSQ-w26fd72A_iilzU', {
         email: authData.email,
         password: authData.password,
         returnSecureToken: true,
@@ -49,17 +77,23 @@ export default new Vuex.Store({
             userId: res.data.localId,
           });
           dispatch('storeUser', authData);
+          dispatch('setLogoutTimer', res.data.expiresIn);
         })
         .catch(error => console.log(error))
     },
-    storeUser({ commit }, userData) {
-      console.log('Store user', userData);
-      globalAxios.post('/users.json', userData)
+    storeUser({ commit, state }, userData) {
+      if (!state.idToken) {
+        return;
+      }
+      axios.post(`/users.json?auth=${state.idToken}`, userData)
         .then(res => console.log(res))
         .catch(err => console.log(err));
     },
-    fetchUser({ commit, dispatch }, userData) {
-      globalAxios.post('/users.json', userData)
+    fetchUser({ commit, dispatch, state }, userData) {
+      if (!state.idToken) {
+        return;
+      }
+      axios.get(`/users.json?auth=${state.idToken}`)
         .then(res => {
           console.log(res)
           const data = res.data
@@ -76,8 +110,5 @@ export default new Vuex.Store({
         })
         .catch(error => console.log(error))
     }
-  },
-  getters: {
-    user: (state) => state.user,
   }
 })
